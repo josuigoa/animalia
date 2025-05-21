@@ -6,19 +6,9 @@ local S = minetest.get_translator(minetest.get_current_modname())
 
 local random = math.random
 
-local walkable_nodes = {}
+local vec_add, vec_sub = vector.add, vector.subtract
 
 local color = minetest.colorize
-
-minetest.register_on_mods_loaded(function()
-	for name in pairs(minetest.registered_nodes) do
-		if name ~= "air" and name ~= "ignore" then
-			if minetest.registered_nodes[name].walkable then
-				table.insert(walkable_nodes, name)
-			end
-		end
-	end
-end)
 
 local function correct_name(str)
 	if str then
@@ -32,17 +22,17 @@ local function register_egg(name, def)
 	minetest.register_entity(def.mob .. "_egg_entity", {
 		hp_max = 1,
 		physical = true,
-		collisionbox = {0, 0, 0, 0, 0, 0},
+		collisionbox = {-0.1, -0.1, -0.1, 0.1, 0.1, 0.1},
 		visual = "sprite",
 		visual_size = {x = 0.5, y = 0.5},
-		textures = {"animalia_egg.png"},
+		textures = {def.inventory_image .. ".png"},
 		initial_sprite_basepos = {x = 0, y = 0},
 		is_visible = true,
 		on_step = function(self, _, moveresult)
 			local pos = self.object:get_pos()
 			if not pos then return end
 			if moveresult.collides then
-				for _, collision in ipairs(moveresult.collision) do
+				for _, collision in ipairs(moveresult.collisions) do
 					if collision.type == "nodes" then
 						minetest.add_particlespawner({
 							amount = 6,
@@ -63,9 +53,10 @@ local function register_egg(name, def)
 						break
 					end
 				end
-				if random(1, 3) < 2 then
+				if random(3) < 2 then
 					local object = minetest.add_entity(pos, def.mob)
 					local ent = object and object:get_luaentity()
+					if not ent then return end
 					ent.growth_scale = 0.7
 					animalia.initialize_api(ent)
 					animalia.protect_from_despawn(ent)
@@ -92,7 +83,6 @@ local function register_egg(name, def)
 				y = pos.y + 1.5,
 				z = pos.z
 			}, def.mob .. "_egg_entity")
-			local ent = object and object:get_luaentity()
 			local dir = player:get_look_dir()
 			object:set_velocity({
 				x = dir.x * vel,
@@ -111,7 +101,7 @@ local function register_egg(name, def)
 	})
 
 	minetest.register_craftitem(name .. "_fried", {
-		description = "Fried " .. def.description,
+		description = S("Fried @1", def.description),
 		inventory_image = def.inventory_image .. "_fried.png",
 		on_use = minetest.item_eat(4),
 		groups = {food_egg = 1, flammable = 2},
@@ -142,7 +132,6 @@ local function mob_storage_use(itemstack, player, pointed)
 		local plyr_name = player:get_player_name()
 		local meta = itemstack:get_meta()
 		local mob = meta:get_string("mob") or ""
-		local staticdata = meta:get_string("staticdata") or ""
 		if mob == "" then
 			animalia.protect_from_despawn(ent)
 			meta:set_string("mob", ent.name)
@@ -179,6 +168,12 @@ minetest.register_craftitem("animalia:feather", {
 	description = S("Feather"),
 	inventory_image = "animalia_feather.png",
 	groups = {flammable = 2, feather = 1},
+})
+
+minetest.register_craftitem("animalia:pelt_bear", {
+	description = S("Bear Pelt"),
+	inventory_image = "animalia_pelt_bear.png",
+	groups = {flammable = 2, pelt = 1},
 })
 
 -- Meat --
@@ -290,7 +285,7 @@ minetest.register_craftitem("animalia:venison_raw", {
 	groups = {flammable = 2, meat = 1, food_meat = 1},
 })
 
-minetest.register_craftitem("animalia:venison_raw_cooked", {
+minetest.register_craftitem("animalia:venison_cooked", {
 	description = S("Venison Steak"),
 	inventory_image = "animalia_venison_cooked.png",
 	on_use = minetest.item_eat(10),
@@ -315,6 +310,12 @@ register_egg("animalia:turkey_egg", {
 	mob = "animalia:turkey"
 })
 
+register_egg("animalia:song_bird_egg", {
+	description = S("Song Bird Egg"),
+	inventory_image = "animalia_song_bird_egg",
+	mob = "animalia:bird"
+})
+
 ----------
 -- Misc --
 ----------
@@ -327,102 +328,43 @@ minetest.register_craftitem("animalia:bucket_milk", {
 	groups = {food_milk = 1, flammable = 3},
 })
 
-local function grow_crops(pos, nodename)
-	local checkname = nodename:sub(1, string.len(nodename) - 1)
-	if minetest.registered_nodes[checkname .. "1"]
-	and minetest.registered_nodes[checkname .. "2"]
-	and minetest.registered_nodes[checkname .. "2"].drawtype == "plantlike" then -- node is more than likely a plant
-		local stage = tonumber(string.sub(nodename, -1)) or 0
-		local newname = checkname .. (stage + 1)
-		if minetest.registered_nodes[newname] then
-			local def = minetest.registered_nodes[newname]
-			def = def and def.place_param2 or 0
-			minetest.set_node(pos, {name = newname, param2 = def})
-			minetest.add_particlespawner({
-				amount = 6,
-				time = 0.1,
-				minpos = vector.subtract(pos, 0.5),
-				maxpos = vector.add(pos, 0.5),
-				minvel = {
-					x = -0.5,
-					y = 0.5,
-					z = -0.5
-				},
-				maxvel = {
-					x = 0.5,
-					y = 1,
-					z = 0.5
-				},
-				minacc = {
-					x = 0,
-					y = 2,
-					z = 0
-				},
-				maxacc = {
-					x = 0,
-					y = 4,
-					z = 0
-				},
-				minexptime = 0.5,
-				maxexptime = 1,
-				minsize = 1,
-				maxsize = 2,
-				collisiondetection = false,
-				vertical = false,
-				use_texture_alpha = true,
-				texture = "creatura_particle_green.png",
-				glow = 6
-			})
-		end
-	end
-end
-
-local guano_fert = minetest.settings:get_bool("guano_fertilization")
-
 minetest.register_craftitem("animalia:bucket_guano", {
 	description = S("Bucket of Guano"),
 	inventory_image = "animalia_guano_bucket.png",
 	stack_max = 1,
 	groups = {flammable = 3},
-	on_place = function(itemstack, placer, pointed_thing)
-		local pos = pointed_thing.above
-		if pos then
-			local under = minetest.get_node(pointed_thing.under)
-			local node = minetest.registered_nodes[under.name]
-			if node and node.on_rightclick then
-				return node.on_rightclick(pointed_thing.under, under, placer,
-										  itemstack)
-			end
-			if pos
-			and not minetest.is_protected(pos, placer:get_player_name()) then
-				if guano_fert then
-					local nodes = minetest.find_nodes_in_area_under_air(
-						vector.subtract(pos, 5),
-						vector.add(pos, 5),
-						{"group:grass", "group:plant", "group:flora"}
-					)
-					if #nodes > 0 then
-						for n = 1, #nodes do
-							grow_crops(nodes[n], minetest.get_node(nodes[n]).name)
-						end
-						local replace = itemstack:get_meta():get_string("original_item")
-						if not replace
-						or replace == "" then
-							replace = "bucket:bucket_empty"
-						end
-						itemstack:set_name(replace)
-					end
-				else
-					minetest.set_node(pos, {name = "animalia:guano"})
-					local replace = itemstack:get_meta():get_string("original_item")
-					if not replace
-					or replace == "" then
-						replace = "bucket:bucket_empty"
-					end
-					itemstack:set_name(replace)
-				end
+	on_place = function(itemstack, placer, pointed)
+		local pos = pointed.under
+		local node = minetest.get_node(pos)
+		if node
+		and node.on_rightclick then
+			return node.on_rightclick(pos, node, placer, itemstack)
+		end
+		if minetest.is_protected(pos, placer:get_player_name()) then
+			return
+		end
+		local crops = minetest.find_nodes_in_area_under_air(
+			vec_sub(pos, 5),
+			vec_add(pos, 5),
+			{"group:grass", "group:plant", "group:flora", "group:crop"}
+		) or {}
+		local crops_grown = 0
+		for _, crop in ipairs(crops) do
+			local crop_name = minetest.get_node(crop).name
+			local growth_stage = tonumber(crop_name:sub(-1)) or 1
+			local new_name = crop_name:sub(1, #crop_name - 1) .. (growth_stage + 1)
+			local new_def = minetest.registered_nodes[new_name]
+			if new_def then
+				local p2 = new_def.place_param2 or 1
+				minetest.set_node(crop, {name = new_name, param2 = p2})
+				crops_grown = crops_grown + 1
 			end
 		end
+		if crops_grown < 1 then minetest.set_node(pointed.above, {name = "animalia:guano"}) end
+		local meta = itemstack:get_meta()
+		local og_item = meta:get_string("original_item")
+		if og_item == "" then og_item = "bucket:bucket_empty" end
+		itemstack:replace(ItemStack(og_item))
 		return itemstack
 	end
 })
@@ -436,7 +378,7 @@ minetest.register_node("animalia:nest_song_bird", {
 	sunlight_propagates = true,
 	walkable = false,
 	stack_max = 1,
-	groups = {snappy = 3, flammable = 3},
+	groups = {snappy = 3, flammable = 3, falling_node = 1},
 	selection_box = {
 		type = "fixed",
 		fixed = {-5 / 16, -0.5, -5 / 16, 5 / 16, -0.31, 5 / 16},
@@ -445,7 +387,21 @@ minetest.register_node("animalia:nest_song_bird", {
 		type = "fixed",
 		fixed = {-5 / 16, -0.5, -5 / 16, 5 / 16, -0.31, 5 / 16},
 	},
-	drops = "default:stick"
+	drop = {
+		items = {
+			{
+				items = {"animalia:song_bird_egg"},
+				rarity = 2,
+			},
+			{
+				items = {"animalia:song_bird_egg 2"},
+				rarity = 4,
+			},
+			{
+				items = {"default:stick"},
+			}
+		}
+	},
 })
 
 -----------
@@ -554,6 +510,57 @@ minetest.register_craftitem("animalia:net", {
 })
 
 -----------
+-- Armor --
+-----------
+
+if minetest.get_modpath("3d_armor") then
+
+	if armor
+	and armor.attributes then
+		table.insert(armor.attributes, "heavy_pelt")
+
+		minetest.register_on_punchplayer(function(player, hitter, _, _, _, damage)
+			local name = player:get_player_name()
+			if name
+			and (armor.def[name].heavy_pelt or 0) > 0 then
+				local hit_ip = hitter:is_player()
+				if hit_ip and minetest.is_protected(player:get_pos(), "") then
+					return
+				else
+					local player_pos = player:get_pos()
+					if not player_pos then return end
+	
+					local biome_data = minetest.get_biome_data(player_pos)
+	
+					if biome_data.heat < 50 then
+						player:set_hp(player:get_hp() - (damage / 1.5))
+						return true
+					end
+				end
+			end
+		end)
+	end
+
+	armor:register_armor("animalia:coat_bear_pelt", {
+		description = S("Bear Pelt Coat"),
+		inventory_image = "animalia_inv_coat_bear_pelt.png",
+		groups = {armor_torso = 1, armor_heal = 0, armor_heavy_pelt = 1, armor_use = 1000},
+		armor_groups = {fleshy = 5}
+	})
+
+
+
+	minetest.register_craft({
+		output = "animalia:coat_bear_pelt",
+		recipe = {
+			{"animalia:pelt_bear", "", "animalia:pelt_bear"},
+			{"animalia:pelt_bear", "animalia:pelt_bear", "animalia:pelt_bear"},
+			{"animalia:pelt_bear", "animalia:pelt_bear", "animalia:pelt_bear"}
+		}
+	})
+end
+
+-----------
 -- Nodes --
 -----------
 
@@ -573,12 +580,16 @@ minetest.register_node("animalia:guano", {
 	},
 	groups = {crumbly = 3, falling_node = 1, not_in_creative_inventory = 1},
 	on_punch = function(pos, _, player)
-		local item_name = player:get_wielded_item():get_name()
-		if item_name:find("bucket")
-		and item_name:find("empty") then
-			local stack = ItemStack("animalia:bucket_guano")
+		local inv = player:get_inventory()
+		local stack = ItemStack("animalia:bucket_guano")
+		if not inv:room_for_item("main", stack) then return end
+		local item = player:get_wielded_item()
+		local item_name = item:get_name()
+		if item_name:match("bucket_empty") then
+			item:take_item()
 			stack:get_meta():set_string("original_item", item_name)
-			player:set_wielded_item(stack)
+			inv:add_item("main", stack)
+			player:set_wielded_item(item)
 			minetest.remove_node(pos)
 		end
 	end
@@ -646,7 +657,7 @@ local steel_ingot = "default:steel_ingot"
 
 minetest.register_on_mods_loaded(function()
 	if minetest.registered_items[steel_ingot] then return end
-	for name, def in pairs(minetest.registered_items) do
+	for name, _ in pairs(minetest.registered_items) do
 		if name:find("ingot")
 		and (name:find("steel")
 		or name:find("iron")) then
